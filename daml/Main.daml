@@ -1,0 +1,129 @@
+module Main where
+
+import TaskSetup
+import DA.List
+import DA.Date
+import DA.Text
+
+
+template TimeTracker 
+    with
+        owner : Party
+        myTasks : [Task]
+        tasksByStatus : Optional [Task]
+        tasksByDueDate : Optional [Task]
+        observer : Party
+    where
+        signatory owner
+
+
+        -- Choice to Add Task to list
+        choice AddTask : ContractId TimeTracker 
+            with 
+                newTask : Task
+            controller owner
+            do
+                assertMsg "Start Date cannot be greater than End Date." (not (newTask.startDate > newTask.endDate))
+                
+                assertMsg "Project Identifier cannot be empty." (not (isEmpty newTask.projectIdentifier))
+                
+                assertMsg "Task already added" (notElem newTask myTasks) -- check to see if Task already exists in myTasks
+                create this with 
+                    myTasks = newTask :: myTasks -- adds new Task to the beginning of the list. This would show Tasks from most recently added to least recently added
+              
+        -- Choice to update task
+        choice UpdateTask : ContractId TimeTracker 
+            with
+                taskToBeUpdatedID : Text
+                updatedTask : Task
+         controller owner
+            do
+                let newList = map (\taskToBeUpdated -> if taskToBeUpdatedID == updatedTask.projectIdentifier then taskToBeUpdated{description = updatedTask.description, startDate = updatedTask.startDate, endDate = updatedTask.endDate} else taskToBeUpdated) myTasks
+                
+                {- 
+                the above line searches myTasks for a task with a projectIdentifier similar to taskToBeUpdatedID. 
+                If found, the task will be updated with attributes from updatedTask.
+                All attributes except projectIdentifier can be modified.
+                projectIdentifier of the old task and new task must be kept the same. Else, the update won't occur.
+                -}
+
+                create this with 
+                    myTasks = newList
+        
+        -- Choice to remove task from list
+        choice RemoveTask : ContractId TimeTracker 
+            with
+                taskToRemoveID : Text
+         controller owner
+            do
+                let (tasksBefore, tasksAfter) = span (\t -> t.projectIdentifier /= taskToRemoveID) myTasks
+                if null tasksAfter
+                    then error "No task found with the specified project identifier."
+                else create this with myTasks = tasksBefore ++ tail tasksAfter
+
+        -- Choice to get task by status
+        choice GetTaskByStatus : ContractId TimeTracker 
+            with
+                customStatus : Text
+            controller owner
+            do
+                let filteredTasks = filter (\t -> t.status == customStatus) myTasks
+                let tasksByStatus = Some filteredTasks
+                create this with 
+                    tasksByStatus = tasksByStatus
+
+        -- Choice to get date by due date
+        choice GetTaskByDueDate : ContractId TimeTracker 
+            with
+                customDueDate : Date
+            controller owner
+            do
+                let filteredTasks = filter (\t -> toDateUTC t.endDate == customDueDate) myTasks
+                let tasksByDueDate = Some filteredTasks
+                create this with 
+                    -- myTasks = myTasks
+                    tasksByDueDate = tasksByDueDate
+        
+        
+
+        
+template Project
+    with
+        projectInfo : [ProjectInfo]
+        projectLead : Party
+        projectsByPriority : Optional [ProjectInfo]
+    where
+        signatory projectLead
+        
+        key (projectLead, projectInfo) : (Party, [ProjectInfo])
+        maintainer key._1
+
+         -- Choice to Add Project
+        choice AddProj : ContractId Project 
+            with 
+                newProject : ProjectInfo
+            controller projectLead
+            do
+                assertMsg "Project already added" (notElem newProject projectInfo) -- check to see if Project already exists 
+                create this with 
+                    projectInfo = newProject :: projectInfo -- adds new Project to the beginning of the list. This would show Projects from most recently added to least recently added
+              
+        -- Non consuming choice to simply return the ContractId of the current contract with archiving anything
+        nonconsuming choice ReviewProj: ContractId Project
+            controller projectLead
+            do
+                return self 
+
+        -- Choice to get a list of Projects by priority
+        choice GetProjectsbyPriority : ContractId Project
+            with
+                customPriority : Text
+            controller projectLead
+            do
+                let filteredProjects = filter (\t -> t.priority == customPriority) projectInfo
+                let projectsByPriority = Some filteredProjects
+                create this with 
+                    projectsByPriority = projectsByPriority
+
+
+        

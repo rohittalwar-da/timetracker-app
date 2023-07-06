@@ -1,0 +1,120 @@
+module ModularTest where
+
+import Main
+import TaskSetup
+import DA.Date
+import Daml.Script
+
+
+-- Testing scripts
+setup : Script (ContractId TimeTracker)
+setup = script do
+  
+    -- STEP 1: Allocate party and create user
+    alice <- allocatePartyWithHint "alice" (PartyIdHint "alice")
+    aliceId <- validateUserId "alice"
+    createUser (User aliceId (Some alice)) [CanActAs alice]
+
+    -- STEP 2: Create observer
+    bob <- allocatePartyWithHint "Bob" (PartyIdHint "Bob")
+    bobId <- validateUserId "bob"
+    createUser (User bobId (Some bob)) [CanActAs bob]
+
+    -- STEP 3: Create data records i.e. tasks
+    nowTime <- getTime
+    let genesisTask = TaskSetup.createTask ("This is the genesis task", nowTime, nowTime, "Project A", "To do")
+    let updateToGenesisTask = TaskSetup.createTask ("This is the updated task", nowTime, nowTime, "Project A", "To do")
+ 
+    -- STEP 4: Create contract
+    addingTask0 <- submit alice do   
+        createCmd TimeTracker with   
+            owner = alice
+            myTasks = [genesisTask]
+            tasksByStatus = None
+            tasksByDueDate = None
+            observer = bob
+    
+    -- choice 1 (happy path): exercise AddTask() choice
+    addingTask1 <- submit alice do
+        exerciseCmd addingTask0 AddTask with
+            newTask =  createTask ("This is the first task", nowTime, nowTime, "Project A", "To do")
+    
+    -- choice 1 (unhappy path): exercise AddTask() choice with Start Date greater than End Date.
+    addingTask2 <- submitMustFail alice do
+        exerciseCmd addingTask0 AddTask with
+            newTask =  createTask ("This task is not allowed", nowTime, datetime 2022 Jan 1 00 00 00 , "Project A", "To do")
+    
+    -- choice 1 (unhappy path): exercise AddTask() choice with empty Project Identifier.
+    addingTask2 <- submitMustFail alice do
+        exerciseCmd addingTask0 AddTask with
+            newTask =  createTask ("This task is not allowed", nowTime, nowTime , "", "To do")
+    
+    -- choice 1 (unhappy path): exercise AddTask() choice to add an already added Task.
+    addingTask2 <- submitMustFail alice do
+        exerciseCmd addingTask0 AddTask with
+            newTask =  createTask ("This is the first task", nowTime, nowTime, "Project A", "To do")
+
+    -- choice 2: (happy path)exercise UpdateTask() choice
+    updateTask1 <- submit alice do
+        exerciseCmd addingTask1 UpdateTask with
+            taskToBeUpdatedID = "Project A"
+            updatedTask = updateToGenesisTask
+     
+    -- choice 3: (happy path) exercise RemoveTask() choice
+    withoutGenesisTask <- submit alice do
+        exerciseCmd updateTask1 RemoveTask with
+            taskToRemoveID = genesisTask.projectIdentifier
+    
+    -- choice 4: (happy path) exercise GetTaskByStatus() choice
+    dailyTasksShown <- submit alice do
+        exerciseCmd withoutGenesisTask GetTaskByStatus with
+            customStatus = "To do"
+    
+    -- choice 5: (happy path) exercise GetTaskByDueDate() choice
+    submit alice do
+        exerciseCmd dailyTasksShown GetTaskByDueDate with
+            customDueDate = date 1970 Jan 01
+
+         
+testProject : Script (ContractId Project)    
+testProject = script do
+
+    -- STEP 1: CREATE USER
+    alice <- allocatePartyWithHint "alice" (PartyIdHint "alice")
+    aliceId <- validateUserId "alice"
+    createUser (User aliceId (Some alice)) [CanActAs alice]
+
+ 
+
+    -- choice_TEST_BEGIN
+    let genesisProject = TaskSetup.createProj ("Project Genesis", "Description for Project Genesis", "Medium")
+ 
+    --  Create Project Contract
+    addingProj <- submit alice do
+            createCmd Project with
+                projectLead = alice
+                projectInfo = [genesisProject]
+                projectsByPriority = None
+                
+            
+    -- choice 1(happy path):  Exercise AddProj() choice
+    addingProj <- submit alice do
+        exerciseCmd addingProj AddProj with
+            newProject = createProj ("Project A", "Description for Project A", "High")
+       
+        -- Testing querying the ledger for projects visible to Alice.
+    [(cid, contract)] <- query @Project alice 
+    debug "Projects visbile to Alice"
+    debug $ cid
+    debug $ contract
+    debug "----------------" 
+    
+       
+    -- choice 2(happy path) : Exercise GetProjectsbyPriority() choice
+    addingProj <- submit alice do
+        exerciseCmd addingProj GetProjectsbyPriority with
+            customPriority = "High"
+    return(addingProj)        
+    -- choice_TEST_END
+
+   

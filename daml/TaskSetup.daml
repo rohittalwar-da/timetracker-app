@@ -1,0 +1,61 @@
+module TaskSetup where
+
+import DA.Date()
+import Daml.Script
+import DA.Time()
+
+
+data Task = Task with
+    description: Text
+    startDate : Time
+    endDate : Time
+    projectIdentifier : Text
+    status : Text
+        deriving (Eq, Show)
+
+data ProjectInfo = ProjectInfo with
+    projectName : Text
+    projectDescription : Text
+    priority : Text
+        deriving (Eq, Show)
+
+
+-- Function to create a task
+createTask : (Text, Time, Time, Text, Text) -> Task
+createTask (desc, start, end, prodID, stat) = Task 
+    {
+    description = desc,
+    startDate = start,  
+    endDate = end,
+    projectIdentifier = prodID,
+    status = stat
+    }
+
+-- Scripts for testing
+testFirstTask : Script Task
+testFirstTask = script do
+    nowTime <- getTime
+    let firstTask = createTask ("This is the first task", nowTime, nowTime, "Project A", "To do")   
+    return $ firstTask
+
+testSecondTask : Script Task
+testSecondTask = script do
+    nowTime <- getTime
+    let secondTask = createTask ("This is the second task", nowTime, nowTime, "Project B", "To do")  
+    return $ secondTask
+
+  
+-- Function to create a Project
+createProj : (Text, Text, Text) -> ProjectInfo
+createProj (name, desc, pty) = ProjectInfo
+    {
+    projectName = name,
+    projectDescription = desc,
+    priority = pty
+    }  
+
+testFirstProject : Script ProjectInfo
+testFirstProject = script do
+    nowTime <- getTime
+    let firstProj = createProj ("Project A", "Description for Project A", "High")   
+    return $ firstProj    
